@@ -41,14 +41,5 @@ def output_fn(prediction_output, content_type):
         im.save(buffer, format='JPEG')
         buffer.seek(0)
 
-        # Get S3 access key and secret access key from env
-        aws_access_key_id = os.getenv('AWS_ACCESS_KEY_ID')
-        aws_secret_access_key = os.getenv('AWS_SECRET_ACCESS_KEY')
-        bucket_name = 'your_bucket_name'
-        s3 = boto3.client('s3', aws_access_key_id=aws_access_key_id, aws_secret_access_key=aws_secret_access_key)
-
-        # Upload image to S3 bucket
-        s3.upload_fileobj(buffer, bucket_name, 'result.jpg')
-
-    # Return JSON object indicating the image was uploaded
-    return {"message": "Image uploaded successfully to S3"}
+        # return the buffer in the response
+        return buffer
