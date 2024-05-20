@@ -1,5 +1,5 @@
 import numpy as np
-import torch, os, io, cv2, boto3
+import torch, os, io, cv2, boto3, base64
 from PIL import Image
 from io import BytesIO
 from ultralytics import YOLO
@@ -41,5 +41,8 @@ def output_fn(prediction_output, content_type):
         im.save(buffer, format='JPEG')
         buffer.seek(0)
 
-        # return the buffer in the response
-        return buffer
+        # Convert BytesIO to base64-encoded string
+        image_data = base64.b64encode(buffer.getvalue()).decode('utf-8')
+
+        # Return the image data as a JSON-serializable response
+        return {'image': image_data}
