@@ -1,5 +1,5 @@
 import numpy as np
-import torch, os, io, cv2, boto3, base64
+import torch, os, io, cv2, base64
 from PIL import Image
 from io import BytesIO
 from ultralytics import YOLO
