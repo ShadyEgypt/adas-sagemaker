@@ -131,7 +131,19 @@ def initialize_model(path, conf_thres=0.7, iou_thres=0.5, num_masks=32):
                                             providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
     input_names, input_shape, input_height, input_width = get_input_details(session)
     output_names = get_output_details(session)
-    return session, input_names, input_shape, input_height, input_width, output_names, conf_thres, iou_thres, num_masks
+    # return a dict of these values
+    result = {
+        "session": session,
+        "input_names": input_names,
+        "input_shape": input_shape,
+        "input_height": input_height,
+        "input_width": input_width,
+        "output_names": output_names,
+        "conf_thres": conf_thres,
+        "iou_thres": iou_thres,
+        "num_masks": num_masks
+    }
+    return result
 
 def segment_objects(session, input_names, output_names, conf_threshold, iou_threshold, num_masks, image, img_height, img_width, input_height, input_width):
     print("segment_objects function from the class has been called")
@@ -272,21 +284,9 @@ def get_output_details(session):
 
 def model_fn(model_dir):
     print("Executing model_fn from inference.py ...")
-    model_path = os.path.join(model_dir, "code", "best.pt")
-    session, input_names, input_shape, input_height, input_width, \
-    output_names, conf_thres, iou_thres, num_masks = initialize_model(model_path, conf_thres=0.5, iou_thres=0.3)
+    model_path = os.path.join(model_dir, "code", "best.onnx")
+    model = initialize_model(model_path, conf_thres=0.5, iou_thres=0.3)
     # return all the previous variables as a dict called model
-    model = {
-        'session': session,
-        'input_names': input_names,
-        'input_shape': input_shape,
-        'input_height': input_height,
-        'input_width': input_width,
-        'output_names': output_names,
-        'conf_thres': conf_thres,
-        'iou_thres': iou_thres,
-        'num_masks': num_masks
-    }
     return model
 
 
