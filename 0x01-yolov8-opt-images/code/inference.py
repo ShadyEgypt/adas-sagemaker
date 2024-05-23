@@ -6,6 +6,9 @@ import time
 import math
 import onnxruntime
 
+from PIL import Image
+import matplotlib.pyplot as plt
+
 class_names = ['direct', 'alternative']
 
 # Create a list of colors for each class where each color is a tuple of 3 integer values
@@ -34,7 +37,6 @@ def nms(boxes, scores, iou_threshold):
 
     return keep_boxes
 
-
 def compute_iou(box, boxes):
     print("compute_iou function from utils has been called")
     # Compute xmin, ymin, xmax, ymax for both boxes
@@ -56,7 +58,6 @@ def compute_iou(box, boxes):
 
     return iou
 
-
 def xywh2xyxy(x):
     print("xywh2xyxy function from utils has been called")
     # Convert bounding box (x, y, w, h) to bounding box (x1, y1, x2, y2)
@@ -67,11 +68,9 @@ def xywh2xyxy(x):
     y[..., 3] = x[..., 1] + x[..., 3] / 2
     return y
 
-
 def sigmoid(x):
     print("sigmoid function from utils has been called")
     return 1 / (1 + np.exp(-x))
-
 
 def draw_detections2(image, boxes, scores, class_ids, mask_alpha=0.3, mask_maps=None):
     print("draw_detections function from utils has been called")
@@ -104,7 +103,6 @@ def draw_detections2(image, boxes, scores, class_ids, mask_alpha=0.3, mask_maps=
 
     return mask_img
 
-
 def draw_masks2(image, boxes, class_ids, mask_alpha=0.3, mask_maps=None):
     print("draw_masks function from utils has been called")
     mask_img = image.copy()
@@ -129,7 +127,7 @@ def draw_masks2(image, boxes, class_ids, mask_alpha=0.3, mask_maps=None):
 def initialize_model(path, conf_thres=0.7, iou_thres=0.5, num_masks=32):
     print("initialize_model function from the class has been called")
     session = onnxruntime.InferenceSession(path,
-                                            providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
+                                            providers=['CPUExecutionProvider'])
     input_names, input_shape, input_height, input_width = get_input_details(session)
     output_names = get_output_details(session)
     # return a dict of these values
@@ -285,11 +283,11 @@ def get_output_details(session):
 
 def model_fn(model_dir):
     print("Executing model_fn from inference.py ...")
-    model_path = os.path.join(model_dir, "code", "best.onnx")
+    # model_path = os.path.join(model_dir)
+    model_path = os.path.join("code", "best.onnx")
     model = initialize_model(model_path, conf_thres=0.5, iou_thres=0.3)
     # return all the previous variables as a dict called model
     return model
-
 
 def input_fn(request_body, request_content_type):
     print("Executing input_fn from inference.py ...")
@@ -333,3 +331,29 @@ def output_fn(prediction_output, content_type):
 
     # Return the image data as a JSON-serializable response
     return {'image': image_data}
+
+
+# if this file is executed directly, then execute the following
+# if __name__ == "__main__":
+#     orig_image = cv2.imread('../data/db6d38a1-4fae2f3d.jpg')
+
+#     payload = json.dumps({"image": [{"b64": base64.b64encode(cv2.imencode('.jpg', orig_image)[1].tobytes()).decode('utf-8')}]})
+#     model = model_fn('best.onnx')
+#     input_data = input_fn(payload, True)
+#     prediction = predict_fn(input_data, model)
+#     result = output_fn(prediction, True)
+#     output_image = result["image"]
+#     # display the image
+#     # Convert the base64 string to bytes
+#     image_bytes = base64.b64decode(output_image)
+
+#     # Load the image from the bytes using PIL
+#     image = Image.open(BytesIO(image_bytes))
+
+#     # Display the image using Matplotlib
+#     plt.figure(figsize=(8, 8))
+#     plt.imshow(image)
+#     plt.axis('off')
+#     plt.show()
+
+
