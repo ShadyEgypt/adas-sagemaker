@@ -6,7 +6,6 @@ from ultralytics import YOLO
 
 def model_fn(model_dir):
     print("Executing model_fn from inference.py ...")
-    env = os.environ
     model_path = os.path.join(model_dir, "code", "best.pt")
     model = YOLO(model_path)
     return model
