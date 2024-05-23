@@ -1,5 +1,6 @@
 import numpy as np
-import os, io, cv2, base64
+import os, io, base64, json
+import cv2
 from io import BytesIO
 import time
 import math
@@ -293,9 +294,11 @@ def model_fn(model_dir):
 def input_fn(request_body, request_content_type):
     print("Executing input_fn from inference.py ...")
     if request_content_type:
-        jpg_original = np.load(io.BytesIO(request_body), allow_pickle=True)
-        jpg_as_np = np.frombuffer(jpg_original, dtype=np.uint8)
-        img = cv2.imdecode(jpg_as_np, flags=-1)
+        payload = json.loads(request_body)
+        b64_image = payload['image'][0]["b64"]
+        img_bytes = base64.b64decode(b64_image)
+        jpg_as_np = np.frombuffer(img_bytes, dtype=np.uint8)
+        img = cv2.imdecode(jpg_as_np, flags=cv2.IMREAD_COLOR)
     else:
         raise Exception("Unsupported content type: " + request_content_type)
     return img
