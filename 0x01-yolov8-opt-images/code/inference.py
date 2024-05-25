@@ -1,13 +1,11 @@
 import numpy as np
-import os, io, base64, json
+import os, io, boto3
+import math, time, tempfile
 import cv2
-from io import BytesIO
-import time
-import math
 import onnxruntime
-
 from PIL import Image
-import matplotlib.pyplot as plt
+from datetime import datetime
+
 
 class_names = ['direct', 'alternative']
 
@@ -124,26 +122,6 @@ def draw_masks2(image, boxes, class_ids, mask_alpha=0.3, mask_maps=None):
 
     return cv2.addWeighted(mask_img, mask_alpha, image, 1 - mask_alpha, 0)
     
-def initialize_model(path, conf_thres=0.7, iou_thres=0.5, num_masks=32):
-    print("initialize_model function from the class has been called")
-    session = onnxruntime.InferenceSession(path,
-                                            providers=['CPUExecutionProvider'])
-    input_names, input_shape, input_height, input_width = get_input_details(session)
-    output_names = get_output_details(session)
-    # return a dict of these values
-    result = {
-        "session": session,
-        "input_names": input_names,
-        "input_shape": input_shape,
-        "input_height": input_height,
-        "input_width": input_width,
-        "output_names": output_names,
-        "conf_thres": conf_thres,
-        "iou_thres": iou_thres,
-        "num_masks": num_masks
-    }
-    return result
-
 def segment_objects(session, input_names, output_names, conf_threshold, iou_threshold, num_masks, image, img_height, img_width, input_height, input_width):
     print("segment_objects function from the class has been called")
     input_tensor = prepare_input(image, input_height, input_width)
@@ -264,42 +242,46 @@ def draw_masks(image, boxes, scores, class_ids, mask_maps, mask_alpha=0.5):
     print("draw_masks function from the class has been called")
     return draw_detections2(image, boxes, scores, class_ids, mask_alpha, mask_maps=mask_maps)
 
-def get_input_details(session):
-    print("get_input_details function from the class has been called")
+
+def model_fn(model_dir):
+    print("Executing model_fn from inference.py ...")
+    # model_path = os.path.join(model_dir)
+    conf_thres=0.7
+    iou_thres=0.5
+    num_masks=32
+    model_path = os.path.join(model_dir, "code", "best.onnx")
+    session = onnxruntime.InferenceSession(model_path,providers=['CPUExecutionProvider'])
     model_inputs = session.get_inputs()
     input_names = [model_inputs[i].name for i in range(len(model_inputs))]
     input_shape = model_inputs[0].shape
     input_height = input_shape[2]
     input_width = input_shape[3]
-    return input_names, input_shape, input_height, input_width
-
-def get_output_details(session):
-    print("get_output_details function from the class has been called")
     model_outputs = session.get_outputs()
     output_names = [model_outputs[i].name for i in range(len(model_outputs))]
-    return output_names
-
-
-
-def model_fn(model_dir):
-    print("Executing model_fn from inference.py ...")
-    # model_path = os.path.join(model_dir)
-    model_path = os.path.join("code", "best.onnx")
-    model = initialize_model(model_path, conf_thres=0.5, iou_thres=0.3)
+    # return a dict of these values
+    result = {
+        "session": session,
+        "input_names": input_names,
+        "input_shape": input_shape,
+        "input_height": input_height,
+        "input_width": input_width,
+        "output_names": output_names,
+        "conf_thres": conf_thres,
+        "iou_thres": iou_thres,
+        "num_masks": num_masks
+    }
     # return all the previous variables as a dict called model
-    return model
+    return result
 
 def input_fn(request_body, request_content_type):
     print("Executing input_fn from inference.py ...")
-    if request_content_type:
-        payload = json.loads(request_body)
-        b64_image = payload['image'][0]["b64"]
-        img_bytes = base64.b64decode(b64_image)
-        jpg_as_np = np.frombuffer(img_bytes, dtype=np.uint8)
-        img = cv2.imdecode(jpg_as_np, flags=cv2.IMREAD_COLOR)
+    if request_content_type == 'image/jpeg':
+        # Convert the bytes back to an image array
+        image = np.frombuffer(request_body, np.uint8)
+        img = cv2.imdecode(image, cv2.IMREAD_COLOR)
+        return img
     else:
         raise Exception("Unsupported content type: " + request_content_type)
-    return img
     
 def predict_fn(input_data, model):
     print("Executing predict_fn from inference.py ...")
@@ -313,47 +295,58 @@ def predict_fn(input_data, model):
     conf_thres = model['conf_thres']
     iou_thres = model['iou_thres']
     num_masks = model['num_masks']
+    img_height = input_data.shape[0]
+    img_width = input_data.shape[1]
     boxes, scores, class_ids, masks = \
         segment_objects(session, input_names, output_names, conf_thres, iou_thres, \
-                        num_masks, input_data, input_data.shape[0], input_data.shape[1], input_height, input_width)
-    result = draw_masks(input_data, boxes, scores, class_ids, masks)
+                        num_masks, input_data, img_height, img_width, input_height, input_width)
+    print("segment objects done")
+    result = {
+        "image": input_data,
+        "boxes": boxes,
+        "scores": scores,
+        "class_ids": class_ids,
+        "masks": masks
+    }
     return result
        
 def output_fn(prediction_output, content_type):
     print("Executing output_fn from inference.py ...")
-    img = prediction_output
-    # Convert the image to a BytesIO buffer
-    _, buffer = cv2.imencode('.jpg', img)
-    # Create a BytesIO object from the buffer
-    buffer = BytesIO(buffer)
-    # Convert BytesIO to base64-encoded string
-    image_data = base64.b64encode(buffer.getvalue()).decode('utf-8')
+    image = prediction_output["image"]
+    boxes = prediction_output["boxes"]
+    scores = prediction_output["scores"]
+    class_ids = prediction_output["class_ids"]
+    masks = prediction_output["masks"]
+    output_image = draw_masks(image, boxes, scores, class_ids, masks)
+    print("result returned to output_fn ...")
+    rgb_img = Image.fromarray(output_image[..., ::-1])
 
-    # Return the image data as a JSON-serializable response
-    return {'image': image_data}
+    # Save the image to a temporary file
+    temp_file = tempfile.NamedTemporaryFile(delete=False)
+    rgb_img.save(temp_file.name, 'JPEG')
+    temp_file.close()
+
+    # Get S3 access key and secret access key from env
+    aws_access_key_id = os.getenv('AWS_ACCESS_KEY_ID')
+    aws_secret_access_key = os.getenv('AWS_SECRET_ACCESS_KEY')
+    bucket_name = 'adas-project-bucket'
+    s3 = boto3.client('s3', aws_access_key_id=aws_access_key_id, aws_secret_access_key=aws_secret_access_key)
+
+    # Generate a timestamp to include in the S3 object path
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    s3_path = f"results/result_{timestamp}.jpg"
+
+    # Upload the temporary file to S3 bucket
+    with open(temp_file.name, 'rb') as file:
+        s3.upload_fileobj(file, bucket_name, s3_path)
+
+    # Remove the temporary file
+    os.remove(temp_file.name)
+
+    # Return JSON object with the path to the uploaded image
+    return {"message": "Image uploaded successfully to S3", "s3_path": s3_path}
 
 
-# if this file is executed directly, then execute the following
-# if __name__ == "__main__":
-#     orig_image = cv2.imread('../data/db6d38a1-4fae2f3d.jpg')
 
-#     payload = json.dumps({"image": [{"b64": base64.b64encode(cv2.imencode('.jpg', orig_image)[1].tobytes()).decode('utf-8')}]})
-#     model = model_fn('best.onnx')
-#     input_data = input_fn(payload, True)
-#     prediction = predict_fn(input_data, model)
-#     result = output_fn(prediction, True)
-#     output_image = result["image"]
-#     # display the image
-#     # Convert the base64 string to bytes
-#     image_bytes = base64.b64decode(output_image)
-
-#     # Load the image from the bytes using PIL
-#     image = Image.open(BytesIO(image_bytes))
-
-#     # Display the image using Matplotlib
-#     plt.figure(figsize=(8, 8))
-#     plt.imshow(image)
-#     plt.axis('off')
-#     plt.show()
 
 
