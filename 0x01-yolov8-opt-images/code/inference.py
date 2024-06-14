@@ -336,9 +336,9 @@ def output_fn(prediction_output, content_type):
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     s3_path = f"results/result_{timestamp}.jpg"
 
-    # Upload the temporary file to S3 bucket
+    # Upload the temporary file to S3 bucket with Content_Type set to image/jpeg
     with open(temp_file.name, 'rb') as file:
-        s3.upload_fileobj(file, bucket_name, s3_path)
+        s3.upload_fileobj(file, bucket_name, s3_path, ExtraArgs={'ContentType': 'image/jpeg'})
 
     # Remove the temporary file
     os.remove(temp_file.name)

@@ -1,6 +1,6 @@
 import numpy as np
-import os, io, cv2, base64
-from io import BytesIO
+import os, cv2, boto3, tempfile
+from datetime import datetime
 import openvino as ov
 
 core = ov.Core()
@@ -93,39 +93,58 @@ def model_fn(model_dir):
 
 def input_fn(request_body, request_content_type):
     print("Executing input_fn from inference.py ...")
-    if request_content_type:
-        jpg_original = np.load(io.BytesIO(request_body), allow_pickle=True)
-        jpg_as_np = np.frombuffer(jpg_original, dtype=np.uint8)
-        img = cv2.imdecode(jpg_as_np, flags=-1)
+    if request_content_type == 'image/jpeg':
+        # Convert the bytes back to an image array
+        image = np.frombuffer(request_body, np.uint8)
+        img = cv2.imdecode(image, cv2.IMREAD_COLOR)
+        return img
     else:
         raise Exception("Unsupported content type: " + request_content_type)
-    return img
     
-def predict_fn(input_data, model):
+def predict_fn(input_data, model_in):
     print("Executing predict_fn from inference.py ...")
     # Extract the model variables from the model dictionary
-    compiled_model = model["model"]
-    H = model["height"]
-    W = model["width"]
-    output_layer_ir = model["output_layer_ir"]
+    compiled_model = model_in["model"]
+    H = model_in["height"]
+    W = model_in["width"]
+    output_layer_ir = model_in["output_layer_ir"]
     # Preprocess the input image
     height, width, _ = input_data.shape
+    print("Executing preprocess from inference.py ...")
     preprocessed_image = preprocess(input_data, H, W)
     # Perform inference
+    print("Executing compiled_model from inference.py ...")
     output_image = compiled_model([preprocessed_image])[output_layer_ir]
     # Post-processing steps here...
+    print("Executing postprocess from inference.py ...")
     postprocessed_image = postprocess(input_data, output_image, height, width)
     return postprocessed_image
        
 def output_fn(prediction_output, content_type):
     print("Executing output_fn from inference.py ...")
     img = prediction_output
-    # Convert the image to a BytesIO buffer
-    _, buffer = cv2.imencode('.jpg', img)
-    # Create a BytesIO object from the buffer
-    buffer = BytesIO(buffer)
-    # Convert BytesIO to base64-encoded string
-    image_data = base64.b64encode(buffer.getvalue()).decode('utf-8')
+    # Save the image to a temporary file
+    temp_file = tempfile.NamedTemporaryFile(delete=False)
+    img.save(temp_file.name, 'JPEG')
+    temp_file.close()
 
-    # Return the image data as a JSON-serializable response
-    return {'image': image_data}
+    # Get S3 access key and secret access key from env
+    aws_access_key_id = os.getenv('AWS_ACCESS_KEY_ID')
+    aws_secret_access_key = os.getenv('AWS_SECRET_ACCESS_KEY')
+    bucket_name = 'adas-project-bucket'
+    s3 = boto3.client('s3', aws_access_key_id=aws_access_key_id, aws_secret_access_key=aws_secret_access_key)
+
+    # Generate a timestamp to include in the S3 object path
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    s3_path = f"results/result_{timestamp}.jpg"
+
+    # Upload the temporary file to S3 bucket with Content_Type set to image/jpeg
+    with open(temp_file.name, 'rb') as file:
+        s3.upload_fileobj(file, bucket_name, s3_path, ExtraArgs={'ContentType': 'image/jpeg'})
+
+    # Remove the temporary file
+    os.remove(temp_file.name)
+
+    # Return JSON object with the path to the uploaded image
+    return {"message": "Image uploaded successfully to S3", "s3_path": s3_path}
+
